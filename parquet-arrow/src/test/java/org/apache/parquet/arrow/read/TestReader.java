@@ -20,6 +20,8 @@ package org.apache.parquet.arrow.read;
 
 import junit.framework.Assert;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.parquet.schema.MessageType;
 import org.junit.Test;
 
@@ -27,11 +29,14 @@ import java.io.IOException;
 
 public class TestReader {
   @Test
-  public void test1() {
+  public void test1() throws IOException {
     System.out.println("hello reader");
 
     Configuration config = new Configuration();
 
-  }
+    FileSystem fs = FileSystem.get(config);
+      Path path = new Path("/Users/wenbozhao/scratch/data");
+    System.out.println(fs.listStatus(path));
 
+  }
 }
