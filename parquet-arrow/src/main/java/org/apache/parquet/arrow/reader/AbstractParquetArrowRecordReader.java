@@ -69,11 +69,8 @@ import org.apache.parquet.schema.Types;
  * Base class for custom RecordReaders for Parquet that directly materialize to `T`.
  * This class handles computing row groups, filtering on them, setting up the column readers,
  * etc.
- * This is heavily based on parquet-mr's RecordReader.
- * TODO: move this to the parquet-mr project. There are performance benefits of doing it
- * this way, albeit at a higher cost to implement. This base class is reusable.
  */
-public abstract class ArrowParquetRecordReaderBase extends RecordReader<Void, Group> {
+public abstract class AbstractParquetArrowRecordReader extends RecordReader<Void, Group> {
   protected Path file;
   protected MessageType fileSchema;
   protected MessageType requestedSchema;
@@ -98,7 +95,7 @@ public abstract class ArrowParquetRecordReaderBase extends RecordReader<Void, Gr
     ParquetMetadata footer;
     List<BlockMetaData> blocks;
 
-    // if task.side.metadata is set, rowGroupOffsets is null
+    // If task.side.metadata is set, rowGroupOffsets is null,
     if (rowGroupOffsets == null) {
       // then we need to apply the predicate push down filter
       footer = readFooter(configuration, file, range(split.getStart(), split.getEnd()));
@@ -137,9 +134,11 @@ public abstract class ArrowParquetRecordReaderBase extends RecordReader<Void, Gr
     this.fileSchema = footer.getFileMetaData().getSchema();
     Map<String, String> fileMetadata = footer.getFileMetaData().getKeyValueMetaData();
 
-    // ReadSupport<T> readSupport = getReadSupportInstance(getReadSupportClass(configuration));
+    // TODO: use a better ReadSupport other than GroupReadSupport.
     ReadSupport<Group> readSupport = new GroupReadSupport();
-    // Reading the full schema
+    // Set the configuration such tht ReadSupport.Init() could get the subset of
+    // fileSchema to read.
+    // TODO: for simplicity, for fileSchema to read all columns.
     configuration.set(ReadSupport.PARQUET_READ_SCHEMA, fileSchema.toString());
 
     ReadSupport.ReadContext readContext = readSupport.init(new InitContext(
@@ -182,8 +181,6 @@ public abstract class ArrowParquetRecordReaderBase extends RecordReader<Void, Gr
    */
   protected void initialize(String path, List<String> columns) throws IOException {
     Configuration config = new Configuration();
-    config.set("spark.sql.parquet.binaryAsString", "false");
-    config.set("spark.sql.parquet.int96AsTimestamp", "false");
 
     this.file = new Path(path);
     long length = this.file.getFileSystem(config).getFileStatus(this.file).getLen();
@@ -295,29 +292,5 @@ public abstract class ArrowParquetRecordReaderBase extends RecordReader<Void, Gr
     }
     return Collections.unmodifiableMap(setMultiMap);
   }
-
-  /*
-
-  @SuppressWarnings("unchecked")
-  private Class<? extends ReadSupport<T>> getReadSupportClass(Configuration configuration) {
-    return (Class<? extends ReadSupport<T>>) ConfigurationUtil.getClassFromConfig(configuration,
-      ParquetInputFormat.READ_SUPPORT_CLASS, ReadSupport.class);
-  }
-
-*/
-  /**
-   * @param readSupportClass to instantiate
-   * @return the configured read support
-   */
-  private static <T> ReadSupport<T> getReadSupportInstance(
-    Class<? extends ReadSupport<T>> readSupportClass){
-    try {
-      return readSupportClass.getConstructor().newInstance();
-    } catch (InstantiationException | IllegalAccessException |
-      NoSuchMethodException | InvocationTargetException e) {
-      throw new BadConfigurationException("could not instantiate read support class", e);
-    }
-  }
-
 }
 

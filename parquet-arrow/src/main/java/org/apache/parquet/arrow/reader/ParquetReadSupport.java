@@ -30,6 +30,7 @@ import java.util.function.Function;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
+// TODO: need to for column pruning
 public class ParquetReadSupport {
 
   public static String ARROW_REQUESTED_SCHEMA = "org.apache.parquet.arrow.requested_schema";

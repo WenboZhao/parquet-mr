@@ -18,15 +18,13 @@
  */
 package org.apache.parquet.arrow.reader;
 
-
-import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.schema.Type;
 
-
+// Checked. Good
 public abstract class ColumnVector implements AutoCloseable {
 
   /**
-   * Returns the data type of this column vector.
+   * Returns the Arrow type of this column vector.
    */
   public final Type dataType() { return type; }
 

@@ -116,7 +116,6 @@ public abstract class WritableColumnVector extends ColumnVector {
    * Returns the dictionary Id for rowId.
    * <p>
    * This should only be called when this `WritableColumnVector` represents dictionaryIds.
-   * We have this separate method for dictionaryIds as per SPARK-16928.
    */
   public abstract int getDictId(int rowId);
 
@@ -167,7 +166,7 @@ public abstract class WritableColumnVector extends ColumnVector {
   }
 
   /**
-   * Ensures that there is enough storage to store capacity elements. That is, the put() APIs
+   * Ensures that there is enough storage to store capacity elements. That is, the putXXX() APIs
    * must work for all rowIds < capacity.
    */
   protected abstract void reserveInternal(int capacity);
@@ -342,45 +341,6 @@ public abstract class WritableColumnVector extends ColumnVector {
     return putByteArray(rowId, value, 0, value.length);
   }
 
-  /*
-  @Override
-  public Decimal getDecimal(int rowId, int precision, int scale) {
-    if (isNullAt(rowId)) return null;
-    if (precision <= Decimal.MAX_INT_DIGITS()) {
-      return Decimal.createUnsafe(getInt(rowId), precision, scale);
-    } else if (precision <= Decimal.MAX_LONG_DIGITS()) {
-      return Decimal.createUnsafe(getLong(rowId), precision, scale);
-    } else {
-      // TODO: best perf?
-      byte[] bytes = getBinary(rowId);
-      BigInteger bigInteger = new BigInteger(bytes);
-      BigDecimal javaDecimal = new BigDecimal(bigInteger, scale);
-      return Decimal.apply(javaDecimal, precision, scale);
-    }
-  }
-
-  public void putDecimal(int rowId, Decimal value, int precision) {
-    if (precision <= Decimal.MAX_INT_DIGITS()) {
-      putInt(rowId, (int) value.toUnscaledLong());
-    } else if (precision <= Decimal.MAX_LONG_DIGITS()) {
-      putLong(rowId, value.toUnscaledLong());
-    } else {
-      BigInteger bigInteger = value.toJavaBigDecimal().unscaledValue();
-      putByteArray(rowId, bigInteger.toByteArray());
-    }
-  }
-
-  @Override
-  public UTF8String getUTF8String(int rowId) {
-    if (isNullAt(rowId)) return null;
-    if (dictionary == null) {
-      return arrayData().getBytesAsUTF8String(getArrayOffset(rowId), getArrayLength(rowId));
-    } else {
-      byte[] bytes = dictionary.decodeToBinary(dictionaryIds.getDictId(rowId));
-      return UTF8String.fromBytes(bytes);
-    }
-  }
-  */
 
   public WritableColumnVector arrayData() {
     return childColumns[0];

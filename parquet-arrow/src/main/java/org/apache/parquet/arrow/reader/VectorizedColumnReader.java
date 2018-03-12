@@ -30,10 +30,8 @@ import org.apache.parquet.column.Dictionary;
 import org.apache.parquet.column.Encoding;
 import org.apache.parquet.column.page.*;
 import org.apache.parquet.column.values.ValuesReader;
-import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.OriginalType;
 import org.apache.parquet.schema.PrimitiveType;
-import org.joda.time.DateTimeUtils;
 import org.joda.time.DateTimeZone;
 
 import static org.apache.parquet.column.ValuesType.REPETITION_LEVEL;
@@ -71,8 +69,8 @@ public class VectorizedColumnReader {
   /**
    * Repetition/Definition/Value readers.
    */
-  private ArrowParquetRecordReaderBase.IntIterator repetitionLevelColumn;
-  private ArrowParquetRecordReaderBase.IntIterator definitionLevelColumn;
+  private AbstractParquetArrowRecordReader.IntIterator repetitionLevelColumn;
+  private AbstractParquetArrowRecordReader.IntIterator definitionLevelColumn;
   private ValuesReader dataColumn;
 
   // Only set if vectorized decoding is true. This is used instead of the row by row decoding
@@ -146,7 +144,7 @@ public class VectorizedColumnReader {
     int rowId = 0;
     WritableColumnVector dictionaryIds = null;
     if (dictionary != null) {
-      // SPARK-16334: We only maintain a single dictionary per row batch, so that it can be used to
+      // We only maintain a single dictionary per row batch, so that it can be used to
       // decode all previous dictionary encoded pages if we ever encounter a non-dictionary encoded
       // page.
       dictionaryIds = column.reserveDictionaryIds(total);
@@ -178,7 +176,7 @@ public class VectorizedColumnReader {
           // non-dictionary encoded values have already been added).
           column.setDictionary(dictionary);
         } else {
-          throw new RuntimeException("Not supported decode dict");
+          throw new RuntimeException("Not supported decode dict!");
           // decodeDictionaryIds(rowId, num, column, dictionaryIds);
         }
       } else {
@@ -598,8 +596,8 @@ public class VectorizedColumnReader {
     int bitWidth = BytesUtils.getWidthFromMaxInt(descriptor.getMaxDefinitionLevel());
     this.defColumn = new VectorizedRleValuesReader(bitWidth);
     dlReader = this.defColumn;
-    this.repetitionLevelColumn = new ArrowParquetRecordReaderBase.ValuesReaderIntIterator(rlReader);
-    this.definitionLevelColumn = new ArrowParquetRecordReaderBase.ValuesReaderIntIterator(dlReader);
+    this.repetitionLevelColumn = new AbstractParquetArrowRecordReader.ValuesReaderIntIterator(rlReader);
+    this.definitionLevelColumn = new AbstractParquetArrowRecordReader.ValuesReaderIntIterator(dlReader);
     try {
       byte[] bytes = page.getBytes().toByteArray();
       rlReader.initFromPage(pageValueCount, bytes, 0);
@@ -614,12 +612,12 @@ public class VectorizedColumnReader {
 
   private void readPageV2(DataPageV2 page) throws IOException {
     this.pageValueCount = page.getValueCount();
-    this.repetitionLevelColumn = ArrowParquetRecordReaderBase.createRLEIterator(descriptor.getMaxRepetitionLevel(),
+    this.repetitionLevelColumn = AbstractParquetArrowRecordReader.createRLEIterator(descriptor.getMaxRepetitionLevel(),
       page.getRepetitionLevels(), descriptor);
 
     int bitWidth = BytesUtils.getWidthFromMaxInt(descriptor.getMaxDefinitionLevel());
     this.defColumn = new VectorizedRleValuesReader(bitWidth);
-    this.definitionLevelColumn = new ArrowParquetRecordReaderBase.ValuesReaderIntIterator(this.defColumn);
+    this.definitionLevelColumn = new AbstractParquetArrowRecordReader.ValuesReaderIntIterator(this.defColumn);
     this.defColumn.initFromBuffer(
       this.pageValueCount, page.getDefinitionLevels().toByteArray());
     try {

@@ -18,7 +18,6 @@
  */
 package org.apache.parquet.arrow.reader;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.parquet.Preconditions;
 import org.apache.parquet.bytes.BytesUtils;
 import org.apache.parquet.column.values.ValuesReader;
@@ -26,9 +25,6 @@ import org.apache.parquet.column.values.bitpacking.BytePacker;
 import org.apache.parquet.column.values.bitpacking.Packer;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
-
-
-import java.io.IOException;
 
 /**
  * A values reader for Parquet's run-length encoded data. This is based off of the version in

@@ -18,14 +18,21 @@
  */
 package org.apache.parquet.arrow.read;
 
-import junit.framework.Assert;
+import com.google.common.collect.Lists;
+import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.arrow.reader.VectorizedParquetArrowRecordReader;
+import org.apache.parquet.arrow.schema.SchemaConverter;
+import org.apache.parquet.arrow.schema.SchemaMapping;
+import org.apache.parquet.hadoop.Footer;
+import org.apache.parquet.hadoop.ParquetFileReader;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.List;
 
 public class TestReader {
   @Test
@@ -35,8 +42,44 @@ public class TestReader {
     Configuration config = new Configuration();
 
     FileSystem fs = FileSystem.get(config);
-      Path path = new Path("/Users/wenbozhao/scratch/data");
-    System.out.println(fs.listStatus(path));
+    Path path = new Path("/Users/wenbozhao/scratch/data");
+    List<Footer> footers = Lists.newArrayList();
 
+    for (FileStatus s : fs.listStatus(path)) {
+      System.out.println(s.getPath() + " " + s.getLen());
+
+      Footer f = null;
+      try {
+        f = new Footer(s.getPath(), ParquetFileReader.readFooter(config, s.getPath()));
+      } catch (Exception e) {
+        f = null;
+        // System.out.println(e)
+      }
+      if (f != null) {
+        footers.add(f);
+        System.out.println("footer " + f.getFile() + " " + f.getParquetMetadata());
+      }
+    }
+
+    SchemaMapping schemaMapping =  new SchemaConverter()
+        .fromParquet(footers.get(0).getParquetMetadata().getFileMetaData().getSchema());
+    Schema arrowSchema =
+        new SchemaConverter()
+            .fromParquet(footers.get(0).getParquetMetadata().getFileMetaData().getSchema())
+            .getArrowSchema();
+
+    System.out.println(arrowSchema.toJson());
+
+    footers.forEach(
+        f -> {
+          VectorizedParquetArrowRecordReader reader = new VectorizedParquetArrowRecordReader(null, 10);
+          try {
+            reader.initialize(f.getFile().toString(), Lists.asList("_1", new String[]{"_2"}));
+            reader.initBatch(schemaMapping);
+            reader.nextBatch();
+          } catch (Exception e) {
+            e.printStackTrace();
+          }
+        });
   }
 }

@@ -22,7 +22,6 @@ import org.apache.parquet.io.api.Binary;
 
 /**
  * Interface for value decoding that supports vectorized (aka batched) decoding.
- * TODO: merge this into parquet-mr.
  */
 public interface VectorizedValuesReader {
   boolean readBoolean();
