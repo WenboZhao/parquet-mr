@@ -24,30 +24,21 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.TimeZone;
 
-import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.FixedWidthVector;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.parquet.arrow.schema.SchemaMapping;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.page.PageReadStore;
-import org.apache.parquet.example.data.Group;
-import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.Type;
 
-/**
- * A specialized RecordReader that reads into InternalRows or ColumnarBatches directly using the
- * Parquet column APIs. This is somewhat based on parquet-mr's ColumnReader.
- *
- * <p>TODO: handle complex types, decimal requiring more than 8 bytes, INT96. Schema mismatch. All
- * of these can be handled efficiently and easily with codegen.
- *
- * <p>This class can either return InternalRows or ColumnarBatches. With whole stage codegen
- * enabled, this class returns ColumnarBatches which offers significant performance gains. TODO:
- * make this always return ColumnarBatches.
- */
 public class VectorizedParquetArrowRecordReader extends AbstractParquetArrowRecordReader {
 
   // The capacity of vectorized batch.
+  // TODO: set default to be 4096.
   private int capacity;
 
   /**
@@ -65,7 +56,7 @@ public class VectorizedParquetArrowRecordReader extends AbstractParquetArrowReco
   private VectorizedColumnReader[] columnReaders;
 
   /** The number of rows that have been returned. */
-  private long rowsReturned;
+  private int rowsReturned;
 
   /** The number of rows that have been reading, including the current in flight row group. */
   private long totalCountLoadedSoFar = 0;
@@ -80,6 +71,8 @@ public class VectorizedParquetArrowRecordReader extends AbstractParquetArrowReco
   private TimeZone convertTz;
 
   private WritableColumnVector[] columnVectors;
+
+  private ArrowWriter arrowWriter;
 
   public VectorizedParquetArrowRecordReader(TimeZone convertTz, int capacity) {
     this.convertTz = convertTz;
@@ -107,33 +100,22 @@ public class VectorizedParquetArrowRecordReader extends AbstractParquetArrowReco
 
   @Override
   public void close() throws IOException {
-    /*
-    if (columnarBatch != null) {
-      columnarBatch.close();
-      columnarBatch = null;
-    }
-    */
     super.close();
   }
 
   @Override
   public boolean nextKeyValue() throws IOException {
-    return false;
-
+    if (batchIdx >= numBatched) {
+      if (!nextBatch()) return false;
+    }
+    ++batchIdx;
+    return true;
   }
 
-  @Override
-  public Group getCurrentValue() throws IOException, InterruptedException {
-    return null;
-  }
-
-  /*
   @Override
   public Object getCurrentValue() {
-    if (returnColumnarBatch) return columnarBatch;
-    return columnarBatch.getRow(batchIdx - 1);
+    throw new UnsupportedOperationException();
   }
-  */
 
   @Override
   public float getProgress() {
@@ -141,15 +123,28 @@ public class VectorizedParquetArrowRecordReader extends AbstractParquetArrowReco
   }
 
   public void initBatch(SchemaMapping schemaMapping) {
-    arrowSchema = schemaMapping.getArrowSchema();
-    MessageType parquetSchema = schemaMapping.getParquetSchema();
+    requestedArrowSchema = schemaMapping.getArrowSchema();
+    BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);
+    arrowWriter = new ArrowWriter(requestedArrowSchema, allocator);
 
-    columnVectors = new SimpleWritableColumnVector[arrowSchema.getFields().size()];
-    int i = 0;
-    for (Field f : arrowSchema.getFields()) {
-      columnVectors[i] = new SimpleWritableColumnVector(parquetSchema.getType(i));
-      i++;
-    }
+    List<FieldVector> fieldVectors = arrowWriter.getRoot().getFieldVectors();
+    columnVectors = new ArrowColumnVector[fieldVectors.size()];
+
+    int[] idx = {0};
+    fieldVectors.forEach(
+        vector -> {
+          if (vector instanceof FixedWidthVector) {
+            // Try to allocate memory as accurate as possible.
+            ((FixedWidthVector) vector).allocateNew((int) totalRowCount);
+          } else {
+            vector.allocateNew();
+          }
+          columnVectors[idx[0]++] = new ArrowColumnVector(vector);
+        });
+  }
+
+  public ArrowWriter getArrowWriter() {
+    return arrowWriter;
   }
 
   /** Advances to the next batch of rows. Returns false if there are no more. */
@@ -157,17 +152,21 @@ public class VectorizedParquetArrowRecordReader extends AbstractParquetArrowReco
     for (WritableColumnVector vector : columnVectors) {
       vector.reset();
     }
-    if (rowsReturned >= totalRowCount) return false;
+    if (rowsReturned >= totalRowCount) {
+      return false;
+    }
     checkEndOfRowGroup();
 
-    int num = (int) Math.min((long) capacity, totalCountLoadedSoFar - rowsReturned);
+    int rowsToRead = (int) Math.min((long) capacity, totalCountLoadedSoFar - rowsReturned);
     for (int i = 0; i < columnReaders.length; ++i) {
-      if (columnReaders[i] == null) continue;
-      columnReaders[i].readBatch(num, columnVectors[i]);
+      if (columnReaders[i] == null) {
+        continue;
+      }
+      columnReaders[i].readBatch(rowsToRead, columnVectors[i]);
     }
-    rowsReturned += num;
-    // columnarBatch.setNumRows(num);
-    numBatched = num;
+    rowsReturned += rowsToRead;
+    arrowWriter.setCount(rowsReturned);
+    numBatched = rowsToRead;
     batchIdx = 0;
     return true;
   }
@@ -210,6 +209,7 @@ public class VectorizedParquetArrowRecordReader extends AbstractParquetArrowReco
               + totalRowCount);
     }
     List<ColumnDescriptor> columns = requestedSchema.getColumns();
+
     List<Type> types = requestedSchema.asGroupType().getFields();
     columnReaders = new VectorizedColumnReader[columns.size()];
     for (int i = 0; i < columns.size(); ++i) {

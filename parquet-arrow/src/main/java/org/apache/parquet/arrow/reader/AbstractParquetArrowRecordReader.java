@@ -21,7 +21,6 @@ package org.apache.parquet.arrow.reader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -52,33 +51,44 @@ import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridDecoder;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.filter2.compat.FilterCompat;
-import org.apache.parquet.hadoop.BadConfigurationException;
 import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.ParquetInputFormat;
 import org.apache.parquet.hadoop.ParquetInputSplit;
 import org.apache.parquet.hadoop.api.InitContext;
 import org.apache.parquet.hadoop.api.ReadSupport;
 import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
-import org.apache.parquet.hadoop.util.ConfigurationUtil;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.Types;
 
 /**
- * Base class for custom RecordReaders for Parquet that directly materialize to `T`.
- * This class handles computing row groups, filtering on them, setting up the column readers,
- * etc.
+ * Base class for custom RecordReaders for Parquet.
  */
-public abstract class AbstractParquetArrowRecordReader extends RecordReader<Void, Group> {
+// XXX Good
+public abstract class AbstractParquetArrowRecordReader extends RecordReader<Void, Object> {
+  /**
+   * The actual parquet file will read.
+   */
   protected Path file;
+
+  /**
+   * The parquet schema of `file`.
+   */
   protected MessageType fileSchema;
+
+  /**
+   * The requested schema which is a subset of `fileSchema`.
+   */
   protected MessageType requestedSchema;
-  protected Schema arrowSchema;
+
+  /**
+   * The converted arrow schema from `requestedSchema`.
+   */
+  protected Schema requestedArrowSchema;
 
   /**
    * The total number of rows this RecordReader will eventually read. The sum of the
-   * rows of all the row groups.
+   * rows of all the row groups in the `file`.
    */
   protected long totalRowCount;
 
@@ -121,8 +131,7 @@ public abstract class AbstractParquetArrowRecordReader extends RecordReader<Void
         for (int i = 0; i < foundRowGroupOffsets.length; i++) {
           foundRowGroupOffsets[i] = footer.getBlocks().get(i).getStartingPos();
         }
-        // this should never happen.
-        // provide a good error message in case there's a bug
+        // This should never happen but we provide a good error message in case there's a bug.
         throw new IllegalStateException(
           "All the offsets listed in the split should be found in the file."
             + " expected: " + Arrays.toString(rowGroupOffsets)
@@ -138,7 +147,8 @@ public abstract class AbstractParquetArrowRecordReader extends RecordReader<Void
     ReadSupport<Group> readSupport = new GroupReadSupport();
     // Set the configuration such tht ReadSupport.Init() could get the subset of
     // fileSchema to read.
-    // TODO: for simplicity, for fileSchema to read all columns.
+    // TODO: for simplicity, use fileSchema to read all columns.
+    // Do we really need a ReadSupport here?
     configuration.set(ReadSupport.PARQUET_READ_SCHEMA, fileSchema.toString());
 
     ReadSupport.ReadContext readContext = readSupport.init(new InitContext(
@@ -150,25 +160,6 @@ public abstract class AbstractParquetArrowRecordReader extends RecordReader<Void
     for (BlockMetaData block : blocks) {
       this.totalRowCount += block.getRowCount();
     }
-  }
-
-  /**
-   * Returns the list of files at 'path' recursively. This skips files that are ignored normally
-   * by MapReduce.
-   */
-  public static List<String> listDirectory(File path) {
-    List<String> result = new ArrayList<>();
-    if (path.isDirectory()) {
-      for (File f: path.listFiles()) {
-        result.addAll(listDirectory(f));
-      }
-    } else {
-      char c = path.getName().charAt(0);
-      if (c != '.' && c != '_') {
-        result.add(path.getAbsolutePath());
-      }
-    }
-    return result;
   }
 
   /**
@@ -206,7 +197,7 @@ public abstract class AbstractParquetArrowRecordReader extends RecordReader<Void
         this.requestedSchema = SchemaConverter.EMPTY_MESSAGE;
       }
     }
-    this.arrowSchema = new SchemaConverter().fromParquet(requestedSchema).getArrowSchema();
+    this.requestedArrowSchema = new SchemaConverter().fromParquet(requestedSchema).getArrowSchema();
     this.reader = new ParquetFileReader(
       config, footer.getFileMetaData(), file, blocks, requestedSchema.getColumns());
     for (BlockMetaData block : blocks) {
@@ -229,7 +220,6 @@ public abstract class AbstractParquetArrowRecordReader extends RecordReader<Void
 
   /**
    * Utility classes to abstract over different way to read ints with different encodings.
-   * TODO: remove this layer of abstraction?
    */
   abstract static class IntIterator {
     abstract int nextInt() throws IOException;

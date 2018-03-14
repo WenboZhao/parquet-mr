@@ -20,7 +20,7 @@ package org.apache.parquet.arrow.reader;
 
 import org.apache.parquet.schema.Type;
 
-// Checked. Good
+// XXX: Good
 public abstract class ColumnVector implements AutoCloseable {
 
   /**

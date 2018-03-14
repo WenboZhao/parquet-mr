@@ -19,12 +19,20 @@
 package org.apache.parquet.arrow.read;
 
 import com.google.common.collect.Lists;
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.complex.NullableMapVector;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.parquet.arrow.reader.ArrowColumnVector;
+import org.apache.parquet.arrow.reader.ArrowWriter;
 import org.apache.parquet.arrow.reader.VectorizedParquetArrowRecordReader;
+import org.apache.parquet.arrow.reader.WritableColumnVector;
 import org.apache.parquet.arrow.schema.SchemaConverter;
 import org.apache.parquet.arrow.schema.SchemaMapping;
 import org.apache.parquet.hadoop.Footer;
@@ -61,22 +69,57 @@ public class TestReader {
       }
     }
 
-    SchemaMapping schemaMapping =  new SchemaConverter()
-        .fromParquet(footers.get(0).getParquetMetadata().getFileMetaData().getSchema());
+    SchemaMapping schemaMapping =
+        new SchemaConverter()
+            .fromParquet(footers.get(0).getParquetMetadata().getFileMetaData().getSchema());
     Schema arrowSchema =
         new SchemaConverter()
             .fromParquet(footers.get(0).getParquetMetadata().getFileMetaData().getSchema())
             .getArrowSchema();
 
     System.out.println(arrowSchema.toJson());
+    footers
+        .get(0)
+        .getParquetMetadata()
+        .getFileMetaData()
+        .getSchema()
+        .getColumns()
+        .forEach(c -> System.out.println("description " + c.toString()));
+
+    BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);
+
+    VectorSchemaRoot schemaRoot = VectorSchemaRoot.create(arrowSchema, allocator);
+
+    schemaRoot
+        .getFieldVectors()
+        .forEach(
+            c -> {
+              System.out.println("FieldVector " + c.toString());
+              if (c instanceof NullableMapVector) {
+                c.getChildrenFromFields()
+                    .forEach(
+                        c1 -> {
+                          System.out.println("FieldVector " + c1.toString());
+                        });
+              }
+            });
 
     footers.forEach(
         f -> {
-          VectorizedParquetArrowRecordReader reader = new VectorizedParquetArrowRecordReader(null, 10);
+          VectorizedParquetArrowRecordReader reader =
+              new VectorizedParquetArrowRecordReader(null, 10);
           try {
-            reader.initialize(f.getFile().toString(), Lists.asList("_1", new String[]{"_2"}));
+            reader.initialize(f.getFile().toString(), Lists.asList("_1", new String[] {"_2"}));
             reader.initBatch(schemaMapping);
             reader.nextBatch();
+
+            List<FieldVector> vectors = reader.getArrowWriter().getRoot().getFieldVectors();
+            vectors.forEach( v -> {
+              ArrowColumnVector v1 = new ArrowColumnVector(v);
+              for (int i = 0; i < reader.getArrowWriter().getCount(); ++i) {
+                System.out.println("Get " + v1.getInt(i));
+              }
+            });
           } catch (Exception e) {
             e.printStackTrace();
           }

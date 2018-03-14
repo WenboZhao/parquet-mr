@@ -125,21 +125,6 @@ public class VectorizedColumnReader {
     }
   }
 
-
-  private boolean next() throws IOException {
-    if (valuesRead >= endOfPageValueCount) {
-      if (valuesRead >= totalValueCount) {
-        // How do we get here? Throw end of stream exception?
-        return false;
-      }
-      readPage();
-    }
-    ++valuesRead;
-    // TODO: Don't read for flat schemas
-    //repetitionLevel = repetitionLevelColumn.nextInt();
-    return definitionLevelColumn.nextInt() == maxDefLevel;
-  }
-
   void readBatch(int total, WritableColumnVector column) throws IOException {
     int rowId = 0;
     WritableColumnVector dictionaryIds = null;
@@ -375,7 +360,6 @@ public class VectorizedColumnReader {
     // This is where we implement support for the valid type conversions.
     // TODO: implement remaining type conversions
     if (column.dataType().asPrimitiveType().getPrimitiveTypeName() == PrimitiveType.PrimitiveTypeName.INT32) {
-
       defColumn.readIntegers(
         num, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
       /*

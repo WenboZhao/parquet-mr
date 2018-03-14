@@ -1,4 +1,3 @@
-
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -27,28 +26,28 @@ import org.apache.parquet.schema.Type;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-
+import java.nio.ByteOrder;
 
 /**
- * This class adds write APIs to ColumnVector.
- * It supports all the types and contains put APIs as well as their batched versions.
- * The batched versions are preferable whenever possible.
+ * This class adds write APIs to ColumnVector. It supports all the types and contains put APIs as
+ * well as their batched versions. The batched versions are preferable whenever possible.
  *
- * Capacity: The data stored is dense but the arrays are not fixed capacity. It is the
+ * <p>Capacity: The data stored is dense but the arrays are not fixed capacity. It is the
  * responsibility of the caller to call reserve() to ensure there is enough room before adding
- * elements. This means that the put() APIs do not check as in common cases (i.e. flat schemas),
- * the lengths are known up front.
+ * elements. This means that the put() APIs do not check as in common cases (i.e. flat schemas), the
+ * lengths are known up front.
  *
- * A WritableColumnVector should be considered immutable once originally created. In other words,
+ * <p>A WritableColumnVector should be considered immutable once originally created. In other words,
  * it is not valid to call put APIs after reads until reset() is called.
  *
- * WritableColumnVector are intended to be reused.
+ * <p>WritableColumnVector are intended to be reused.
  */
 public abstract class WritableColumnVector extends ColumnVector {
 
-  /**
-   * Resets this column for writing. The currently stored values are no longer accessible.
-   */
+  public static final boolean bigEndianPlatform =
+      ByteOrder.nativeOrder().equals(ByteOrder.BIG_ENDIAN);
+
+  /** Resets this column for writing. The currently stored values are no longer accessible. */
   public void reset() {
     if (isConstant) return;
 
@@ -57,7 +56,6 @@ public abstract class WritableColumnVector extends ColumnVector {
         ((WritableColumnVector) c).reset();
       }
     }
-    elementsAppended = 0;
     if (numNulls > 0) {
       putNotNulls(0, capacity);
       numNulls = 0;
@@ -96,9 +94,12 @@ public abstract class WritableColumnVector extends ColumnVector {
   }
 
   private void throwUnsupportedException(int requiredCapacity, Throwable cause) {
-    String message = "Cannot reserve additional contiguous bytes in the vectorized reader " +
-      "(requested = " + requiredCapacity + " bytes). As a workaround, you can disable the " +
-      "vectorized reader, or increase the vectorized reader batch size. For parquet file ";
+    String message =
+        "Cannot reserve additional contiguous bytes in the vectorized reader "
+            + "(requested = "
+            + requiredCapacity
+            + " bytes). As a workaround, you can disable the "
+            + "vectorized reader, or increase the vectorized reader batch size. For parquet file ";
     throw new RuntimeException(message, cause);
   }
 
@@ -114,50 +115,44 @@ public abstract class WritableColumnVector extends ColumnVector {
 
   /**
    * Returns the dictionary Id for rowId.
-   * <p>
-   * This should only be called when this `WritableColumnVector` represents dictionaryIds.
+   *
+   * <p>This should only be called when this `WritableColumnVector` represents dictionaryIds.
    */
   public abstract int getDictId(int rowId);
 
   /**
    * The Dictionary for this column.
-   * <p>
-   * If it's not null, will be used to decode the value in getXXX().
+   *
+   * <p>If it's not null, will be used to decode the value in getXXX().
    */
   protected Dictionary dictionary;
 
-  /**
-   * Reusable column for ids of dictionary.
-   */
+  /** Reusable column for ids of dictionary. */
   protected WritableColumnVector dictionaryIds;
 
-  /**
-   * Returns true if this column has a dictionary.
-   */
+  /** Returns true if this column has a dictionary. */
   public boolean hasDictionary() {
     return this.dictionary != null;
   }
 
-  /**
-   * Returns the underlying integer column for ids of dictionary.
-   */
+  /** Returns the underlying integer column for ids of dictionary. */
   public WritableColumnVector getDictionaryIds() {
     return dictionaryIds;
   }
 
-  /**
-   * Update the dictionary.
-   */
+  /** Update the dictionary. */
   public void setDictionary(Dictionary dictionary) {
     this.dictionary = dictionary;
   }
 
-  /**
-   * Reserve a integer column for ids of dictionary.
-   */
+  /** Reserve a integer column for ids of dictionary. */
   public WritableColumnVector reserveDictionaryIds(int capacity) {
     if (dictionaryIds == null) {
-      dictionaryIds = reserveNewColumn(capacity, new PrimitiveType(Type.Repetition.OPTIONAL, PrimitiveType.PrimitiveTypeName.INT32, "x"));
+      dictionaryIds =
+          reserveNewColumn(
+              capacity,
+              new PrimitiveType(
+                  Type.Repetition.OPTIONAL, PrimitiveType.PrimitiveTypeName.INT32, "x"));
     } else {
       dictionaryIds.reset();
       dictionaryIds.reserve(capacity);
@@ -171,176 +166,127 @@ public abstract class WritableColumnVector extends ColumnVector {
    */
   protected abstract void reserveInternal(int capacity);
 
-  /**
-   * Sets null/not null to the value at rowId.
-   */
+  /** Sets null/not null to the value at rowId. */
   public abstract void putNotNull(int rowId);
 
   public abstract void putNull(int rowId);
 
-  /**
-   * Sets null/not null to the values at [rowId, rowId + count).
-   */
+  /** Sets null/not null to the values at [rowId, rowId + count). */
   public abstract void putNulls(int rowId, int count);
 
   public abstract void putNotNulls(int rowId, int count);
 
-  /**
-   * Sets `value` to the value at rowId.
-   */
+  /** Sets `value` to the value at rowId. */
   public abstract void putBoolean(int rowId, boolean value);
 
-  /**
-   * Sets value to [rowId, rowId + count).
-   */
+  /** Sets value to [rowId, rowId + count). */
   public abstract void putBooleans(int rowId, int count, boolean value);
 
-  /**
-   * Sets `value` to the value at rowId.
-   */
+  /** Sets `value` to the value at rowId. */
   public abstract void putByte(int rowId, byte value);
 
-  /**
-   * Sets value to [rowId, rowId + count).
-   */
+  /** Sets value to [rowId, rowId + count). */
   public abstract void putBytes(int rowId, int count, byte value);
 
-  /**
-   * Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count)
-   */
+  /** Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count) */
   public abstract void putBytes(int rowId, int count, byte[] src, int srcIndex);
 
-  /**
-   * Sets `value` to the value at rowId.
-   */
+  /** Sets `value` to the value at rowId. */
   public abstract void putShort(int rowId, short value);
 
-  /**
-   * Sets value to [rowId, rowId + count).
-   */
+  /** Sets value to [rowId, rowId + count). */
   public abstract void putShorts(int rowId, int count, short value);
 
-  /**
-   * Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count)
-   */
+  /** Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count) */
   public abstract void putShorts(int rowId, int count, short[] src, int srcIndex);
 
   /**
-   * Sets values from [src[srcIndex], src[srcIndex + count * 2]) to [rowId, rowId + count)
-   * The data in src must be 2-byte platform native endian shorts.
+   * Sets values from [src[srcIndex], src[srcIndex + count * 2]) to [rowId, rowId + count) The data
+   * in src must be 2-byte platform native endian shorts.
    */
   public abstract void putShorts(int rowId, int count, byte[] src, int srcIndex);
 
-  /**
-   * Sets `value` to the value at rowId.
-   */
+  /** Sets `value` to the value at rowId. */
   public abstract void putInt(int rowId, int value);
 
-  /**
-   * Sets value to [rowId, rowId + count).
-   */
+  /** Sets value to [rowId, rowId + count). */
   public abstract void putInts(int rowId, int count, int value);
 
-  /**
-   * Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count)
-   */
+  /** Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count) */
   public abstract void putInts(int rowId, int count, int[] src, int srcIndex);
 
   /**
-   * Sets values from [src[srcIndex], src[srcIndex + count * 4]) to [rowId, rowId + count)
-   * The data in src must be 4-byte platform native endian ints.
+   * Sets values from [src[srcIndex], src[srcIndex + count * 4]) to [rowId, rowId + count) The data
+   * in src must be 4-byte platform native endian ints.
    */
   public abstract void putInts(int rowId, int count, byte[] src, int srcIndex);
 
   /**
-   * Sets values from [src[srcIndex], src[srcIndex + count * 4]) to [rowId, rowId + count)
-   * The data in src must be 4-byte little endian ints.
+   * Sets values from [src[srcIndex], src[srcIndex + count * 4]) to [rowId, rowId + count) The data
+   * in src must be 4-byte little endian ints.
    */
   public abstract void putIntsLittleEndian(int rowId, int count, byte[] src, int srcIndex);
 
-  /**
-   * Sets `value` to the value at rowId.
-   */
+  /** Sets `value` to the value at rowId. */
   public abstract void putLong(int rowId, long value);
 
-  /**
-   * Sets value to [rowId, rowId + count).
-   */
+  /** Sets value to [rowId, rowId + count). */
   public abstract void putLongs(int rowId, int count, long value);
 
-  /**
-   * Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count)
-   */
+  /** Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count) */
   public abstract void putLongs(int rowId, int count, long[] src, int srcIndex);
 
   /**
-   * Sets values from [src[srcIndex], src[srcIndex + count * 8]) to [rowId, rowId + count)
-   * The data in src must be 8-byte platform native endian longs.
+   * Sets values from [src[srcIndex], src[srcIndex + count * 8]) to [rowId, rowId + count) The data
+   * in src must be 8-byte platform native endian longs.
    */
   public abstract void putLongs(int rowId, int count, byte[] src, int srcIndex);
 
   /**
-   * Sets values from [src + srcIndex, src + srcIndex + count * 8) to [rowId, rowId + count)
-   * The data in src must be 8-byte little endian longs.
+   * Sets values from [src + srcIndex, src + srcIndex + count * 8) to [rowId, rowId + count) The
+   * data in src must be 8-byte little endian longs.
    */
   public abstract void putLongsLittleEndian(int rowId, int count, byte[] src, int srcIndex);
 
-  /**
-   * Sets `value` to the value at rowId.
-   */
+  /** Sets `value` to the value at rowId. */
   public abstract void putFloat(int rowId, float value);
 
-  /**
-   * Sets value to [rowId, rowId + count).
-   */
+  /** Sets value to [rowId, rowId + count). */
   public abstract void putFloats(int rowId, int count, float value);
 
-  /**
-   * Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count)
-   */
+  /** Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count) */
   public abstract void putFloats(int rowId, int count, float[] src, int srcIndex);
 
   /**
-   * Sets values from [src[srcIndex], src[srcIndex + count * 4]) to [rowId, rowId + count)
-   * The data in src must be ieee formatted floats in platform native endian.
+   * Sets values from [src[srcIndex], src[srcIndex + count * 4]) to [rowId, rowId + count) The data
+   * in src must be ieee formatted floats in platform native endian.
    */
   public abstract void putFloats(int rowId, int count, byte[] src, int srcIndex);
 
-  /**
-   * Sets `value` to the value at rowId.
-   */
+  /** Sets `value` to the value at rowId. */
   public abstract void putDouble(int rowId, double value);
 
-  /**
-   * Sets value to [rowId, rowId + count).
-   */
+  /** Sets value to [rowId, rowId + count). */
   public abstract void putDoubles(int rowId, int count, double value);
 
-  /**
-   * Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count)
-   */
+  /** Sets values from [src[srcIndex], src[srcIndex + count]) to [rowId, rowId + count) */
   public abstract void putDoubles(int rowId, int count, double[] src, int srcIndex);
 
   /**
-   * Sets values from [src[srcIndex], src[srcIndex + count * 8]) to [rowId, rowId + count)
-   * The data in src must be ieee formatted doubles in platform native endian.
+   * Sets values from [src[srcIndex], src[srcIndex + count * 8]) to [rowId, rowId + count) The data
+   * in src must be ieee formatted doubles in platform native endian.
    */
   public abstract void putDoubles(int rowId, int count, byte[] src, int srcIndex);
 
-  /**
-   * Puts a byte array that already exists in this column.
-   */
+  /** Puts a byte array that already exists in this column. */
   public abstract void putArray(int rowId, int offset, int length);
 
-  /**
-   * Sets values from [value + offset, value + offset + count) to the values at rowId.
-   */
+  /** Sets values from [value + offset, value + offset + count) to the values at rowId. */
   public abstract int putByteArray(int rowId, byte[] value, int offset, int count);
 
   public final int putByteArray(int rowId, byte[] value) {
     return putByteArray(rowId, value, 0, value.length);
   }
-
 
   public WritableColumnVector arrayData() {
     return childColumns[0];
@@ -355,23 +301,12 @@ public abstract class WritableColumnVector extends ColumnVector {
     return childColumns[ordinal];
   }
 
-  /**
-   * Returns the elements appended.
-   */
-  public final int getElementsAppended() {
-    return elementsAppended;
-  }
-
-  /**
-   * Marks this column as being constant.
-   */
+  /** Marks this column as being constant. */
   public final void setIsConstant() {
     isConstant = true;
   }
 
-  /**
-   * Maximum number of rows that can be stored in this column.
-   */
+  /** Maximum number of rows that can be stored in this column. */
   protected int capacity;
 
   /** Upper limit for the maximum capacity for this column. */
@@ -383,29 +318,18 @@ public abstract class WritableColumnVector extends ColumnVector {
   protected int numNulls;
 
   /**
-   * True if this column's values are fixed. This means the column values never change, even
-   * across resets.
+   * True if this column's values are fixed. This means the column values never change, even across
+   * resets.
    */
   protected boolean isConstant;
 
-  /**
-   * Default size of each array length value. This grows as necessary.
-   */
+  /** Default size of each array length value. This grows as necessary. */
   protected static final int DEFAULT_ARRAY_LENGTH = 4;
 
-  /**
-   * Current write cursor (row index) when appending data.
-   */
-  protected int elementsAppended;
-
-  /**
-   * If this is a nested type (array or struct), the column for the child data.
-   */
+  /** If this is a nested type (array or struct), the column for the child data. */
   protected WritableColumnVector[] childColumns;
 
-  /**
-   * Reserve a new column.
-   */
+  /** Reserve a new column. */
   protected abstract WritableColumnVector reserveNewColumn(int capacity, Type type);
 
   protected boolean isArray() {
@@ -413,8 +337,7 @@ public abstract class WritableColumnVector extends ColumnVector {
   }
 
   /**
-   * Sets up the common state and also handles creating the child columns if this is a nested
-   * type.
+   * Sets up the common state and also handles creating the child columns if this is a nested type.
    */
   protected WritableColumnVector(int capacity, Type type) {
     super(type);
@@ -422,37 +345,10 @@ public abstract class WritableColumnVector extends ColumnVector {
 
     // TODO: will handle nested struct later
     this.childColumns = null;
-    /*
-    if (isArray()) {
-      DataType childType;
-      int childCapacity = capacity;
-      if (type instanceof ArrayType) {
-        childType = ((ArrayType) type).elementType();
-      } else {
-        childType = DataTypes.ByteType;
-        childCapacity *= DEFAULT_ARRAY_LENGTH;
-      }
-      this.childColumns = new WritableColumnVector[1];
-      this.childColumns[0] = reserveNewColumn(childCapacity, childType);
-    } else if (type instanceof StructType) {
-      StructType st = (StructType) type;
-      this.childColumns = new WritableColumnVector[st.fields().length];
-      for (int i = 0; i < childColumns.length; ++i) {
-        this.childColumns[i] = reserveNewColumn(capacity, st.fields()[i].dataType());
-      }
-    } else if (type instanceof MapType) {
-      MapType mapType = (MapType) type;
-      this.childColumns = new WritableColumnVector[2];
-      this.childColumns[0] = reserveNewColumn(capacity, mapType.keyType());
-      this.childColumns[1] = reserveNewColumn(capacity, mapType.valueType());
-    } else if (type instanceof CalendarIntervalType) {
-      // Two columns. Months as int. Microseconds as Long.
-      this.childColumns = new WritableColumnVector[2];
-      this.childColumns[0] = reserveNewColumn(capacity, DataTypes.IntegerType);
-      this.childColumns[1] = reserveNewColumn(capacity, DataTypes.LongType);
-    } else {
+    if (this.type.isPrimitive()) {
       this.childColumns = null;
+    } else {
+      throw new UnsupportedOperationException("Does not support non primitive type.");
     }
-    */
   }
 }
